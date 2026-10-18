@@ -1,0 +1,73 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Enable Long Paths on Windows
+        run: |
+          reg add HKLM\SYSTEM\CurrentControlSet\Control\FileSystem /v LongPathsEnabled /t REG_DWORD /d 1 /f
+          git config --system core.longpaths true
+
+      - name: Set up JDK 17 (with JavaFX support)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build FAT JAR with Maven
+        run: mvn clean package
+
+      - name: Prepare JPackage Input
+        run: |
+          New-Item -ItemType Directory -Force -Path target/jpackage-input
+          Copy-Item target/file-sharing-system-1.0-SNAPSHOT.jar target/jpackage-input/
+
+      - name: Create Portable App Folder (App Image)
+        run: |
+          jpackage --type app-image `
+                   --input target/jpackage-input `
+                   --dest target/portable `
+                   --name "FileSharingSystem" `
+                   --main-jar file-sharing-system-1.0-SNAPSHOT.jar `
+                   --main-class Launcher
+
+      - name: Create EXE Installer
+        run: |
+          jpackage --type exe `
+                   --input target/jpackage-input `
+                   --dest target/installer `
+                   --name "FileSharingSystemInstaller" `
+                   --main-jar file-sharing-system-1.0-SNAPSHOT.jar `
+                   --main-class Launcher `
+                   --app-version 1.0.0 `
+                   --win-shortcut `
+                   --win-menu
+
+      - name: Zip Portable App
+        run: Compress-Archive -Path target/portable/FileSharingSystem -DestinationPath target/FileSharingSystem-portable.zip
+
+      - name: Upload Installer Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FileSharingSystem-Installer
+          path: target/installer/FileSharingSystemInstaller-1.0.0.exe
+
+      - name: Upload Portable Zip Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: FileSharingSystem-Portable
+          path: FileSharingSystem-portable.zip
+            
